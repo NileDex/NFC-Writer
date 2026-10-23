@@ -1,0 +1,21 @@
+{
+  "placeholder": true,
+  "note": "Placeholder firmware - the .bin files in this folder are stubs. Build the universal writer from source and replace them before flashing a real board.",
+  "builds": [
+    {
+      "id": "universal-writer",
+      "name": "Universal writer (ESP32)",
+      "chip": "esp32",
+      "baud": 460800,
+      "flashMode": "dio",
+      "flashFreq": "40m",
+      "flashSize": "4MB",
+      "placeholder": true,
+      "parts": [
+        { "path": "bootloader.bin", "offset": "0x1000" },
+        { "path": "partitions.bin", "offset": "0x8000" },
+        { "path": "firmware.bin", "offset": "0x10000" }
+      ]
+    }
+  ]
+}
