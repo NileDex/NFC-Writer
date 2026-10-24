@@ -24,7 +24,28 @@ export function FlashPage() {
   const [log, setLog] = useState<LogLine[]>([])
   const [error, setError] = useState<{ title: string; fixes: string[] } | null>(null)
   const [done, setDone] = useState<string | null>(null)
+  // Stepped card flow: completed cards stay stacked above and the next one reveals below.
+  const [step, setStep] = useState(0)
   const logIdRef = useRef(0)
+
+  const goTo = (next: number) => {
+    setStep(next)
+    requestAnimationFrame(() => {
+      document
+        .getElementById(`flash-step-${next}`)
+        ?.scrollIntoView?.({ behavior: 'smooth', block: 'nearest' })
+    })
+  }
+
+  const onSelectBuild = (id: string) => {
+    if (id === selectedId) return
+    setSelectedId(id)
+    setDone(null)
+    setError(null)
+    setProgress(null)
+    setLog([])
+    setStep((s) => Math.min(s, 1))
+  }
 
   const appendLog = useCallback((text: string, kind: LogKind = 'info') => {
     logIdRef.current += 1
@@ -66,6 +87,7 @@ export function FlashPage() {
       })
       setDone(chip)
       setProgress(null)
+      goTo(2)
     } catch (err) {
       const name = err instanceof Error ? err.name : ''
       const message = err instanceof Error ? err.message : String(err)
@@ -101,15 +123,15 @@ export function FlashPage() {
           steps={[
             {
               label: 'Select build',
-              state: selected ? 'done' : 'current',
+              state: step > 0 ? 'done' : 'current',
             },
             {
               label: 'Flash firmware',
-              state: done ? 'done' : selected ? 'current' : 'todo',
+              state: step > 1 ? 'done' : step === 1 ? 'current' : 'todo',
             },
             {
               label: 'Write tags',
-              state: done ? 'current' : 'todo',
+              state: step === 2 ? 'current' : 'todo',
             },
           ]}
         />
@@ -133,10 +155,17 @@ export function FlashPage() {
               </Callout>
             )}
 
-            <section className="panel">
+            <section
+              id="flash-step-0"
+              className={`panel wizard-card${step > 0 ? ' wizard-card--done' : ''}`}
+            >
               <div className="panel__head">
                 <h3>Choose a build</h3>
-                <span className="chip">{manifest.builds.length} available</span>
+                {step > 0 ? (
+                  <span className="chip chip--ok">Done</span>
+                ) : (
+                  <span className="chip">{manifest.builds.length} available</span>
+                )}
               </div>
               <div className="form-grid" role="radiogroup" aria-label="Firmware build">
                 {manifest.builds.map((build) => (
@@ -145,20 +174,40 @@ export function FlashPage() {
                     build={build}
                     placeholder={isPlaceholder(manifest, build)}
                     selected={build.id === selectedId}
-                    onSelect={() => setSelectedId(build.id)}
+                    onSelect={() => onSelectBuild(build.id)}
                   />
                 ))}
               </div>
+              <div className="wizard-card__foot">
+                <button type="button" className="btn btn--ghost" disabled>
+                  Back
+                </button>
+                <button
+                  type="button"
+                  className="btn btn--primary"
+                  onClick={() => goTo(1)}
+                  disabled={!selected}
+                >
+                  Next →
+                </button>
+              </div>
             </section>
 
-            {selected && (
-              <section className="panel">
+            {step >= 1 && selected && (
+              <section
+                id="flash-step-1"
+                className={`panel wizard-card reveal${step > 1 ? ' wizard-card--done' : ''}`}
+              >
                 <div className="panel__head">
                   <h3>Flash</h3>
-                  <span className="chip">
-                    <ChipIcon size={12} />
-                    {selected.chip} · {selected.baud} baud
-                  </span>
+                  {step > 1 ? (
+                    <span className="chip chip--ok">Flashed</span>
+                  ) : (
+                    <span className="chip">
+                      <ChipIcon size={12} />
+                      {selected.chip} · {selected.baud} baud
+                    </span>
+                  )}
                 </div>
 
                 <div className="btn-row" style={{ marginBottom: 'var(--space-4)' }}>
@@ -193,28 +242,66 @@ export function FlashPage() {
                 )}
 
                 <LogPanel lines={log} label="Flash log" />
+
+                {error && (
+                  <div style={{ marginTop: 'var(--space-4)' }}>
+                    <Callout kind="error">
+                      <strong>{error.title}</strong>
+                      <ul style={{ margin: 'var(--space-2) 0 0', paddingLeft: 'var(--space-5)' }}>
+                        {error.fixes.map((fix) => (
+                          <li key={fix} style={{ marginBottom: 'var(--space-1)' }}>
+                            {fix}
+                          </li>
+                        ))}
+                      </ul>
+                    </Callout>
+                  </div>
+                )}
+
+                <div className="wizard-card__foot">
+                  <button
+                    type="button"
+                    className="btn btn--ghost"
+                    onClick={() => goTo(0)}
+                  >
+                    Back
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn--primary"
+                    onClick={() => goTo(2)}
+                    disabled={!done}
+                  >
+                    Next →
+                  </button>
+                </div>
               </section>
             )}
 
-            {done && (
-              <Callout kind="success">
-                <strong>Flash complete.</strong> Chip: {done}. The board is resetting -
-                unplug it, wire the RC522, then head to the{' '}
-                <Link to="/write">Writer</Link>.
-              </Callout>
-            )}
-
-            {error && (
-              <Callout kind="error">
-                <strong>{error.title}</strong>
-                <ul style={{ margin: 'var(--space-2) 0 0', paddingLeft: 'var(--space-5)' }}>
-                  {error.fixes.map((fix) => (
-                    <li key={fix} style={{ marginBottom: 'var(--space-1)' }}>
-                      {fix}
-                    </li>
-                  ))}
-                </ul>
-              </Callout>
+            {step >= 2 && done && (
+              <section id="flash-step-2" className="panel wizard-card reveal">
+                <div className="panel__head">
+                  <h3>Write tags</h3>
+                  <span className="chip chip--ok">Ready</span>
+                </div>
+                <Callout kind="success">
+                  <strong>Flash complete.</strong> Chip: {done}. The board is resetting -
+                  unplug it, wire the RC522, then head to the{' '}
+                  <Link to="/write">Writer</Link>.
+                </Callout>
+                <div className="wizard-card__foot">
+                  <button
+                    type="button"
+                    className="btn btn--ghost"
+                    onClick={() => goTo(1)}
+                  >
+                    Back
+                  </button>
+                  <Link to="/write" className="btn btn--primary">
+                    Open the Writer →
+                  </Link>
+                </div>
+              </section>
             )}
           </>
         )}
